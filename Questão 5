@@ -1,0 +1,53 @@
+>> clear; clc; close all;
+
+%% Carregar dados
+dados = readmatrix('ball_pt (1) (1).xlsx');
+
+v1 = dados(1,2:end);
+v2 = dados(2,2:end);
+y  = dados(3,2:end);
+
+X = [v1; v2];
+T = y;
+
+%% Divisão dos dados
+rng(1);
+
+net = fitnet(4,'trainlm');
+
+net.layers{1}.transferFcn = 'tansig';
+net.layers{2}.transferFcn = 'purelin';
+
+net.divideParam.trainRatio = 0.70;
+net.divideParam.valRatio   = 0.15;
+net.divideParam.testRatio  = 0.15;
+
+%% Treinamento
+[net,tr] = train(net,X,T);
+
+%% Simulação
+Y = net(X);
+
+%% Métricas
+erro = T - Y;
+
+MSE = mse(net,T,Y);
+RMSE = sqrt(MSE);
+R = corrcoef(T,Y);
+R2 = R(1,2)^2;
+
+fprintf('MSE = %.6f\n',MSE);
+fprintf('RMSE = %.6f\n',RMSE);
+fprintf('R² = %.6f\n',R2);
+
+%% Gráfico
+figure;
+plot(T,'b','LineWidth',2);
+hold on;
+plot(Y,'r--','LineWidth',2);
+grid on;
+
+legend('Posição Real','Posição Estimada');
+xlabel('Amostra');
+ylabel('Posição (pol)');
+title('PMC para estimação da posição da esfera');
