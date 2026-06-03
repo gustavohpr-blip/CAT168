@@ -50,4 +50,4 @@ grid on;
 legend('Posição Real','Posição Estimada');
 xlabel('Amostra');
 ylabel('Posição (pol)');
-title('PMC para estimação da posição da esfera');
+title('PMC para estimativa da posição da esfera');
