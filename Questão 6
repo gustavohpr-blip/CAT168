@@ -1,0 +1,151 @@
+%% PMC PARA CLASSIFICAÇÃO DE ÓLEOS
+clear; clc; close all;
+
+%% =========================
+% LEITURA DOS DADOS DE TREINAMENTO
+%% =========================
+
+T = readtable('dadosTrafos.xlsx','Sheet','tab_treinamento');
+
+txt = string(T.x1);
+
+N = length(txt);
+dados = zeros(N,4);
+
+for k = 1:N
+    linha = strrep(txt(k),',','.');
+    valores = sscanf(linha,'%f');
+    dados(k,:) = valores';
+end
+
+X = dados(:,1:3)';
+D = dados(:,4)';
+
+% Conversao das classes (-1,+1) para (0,1)
+Dbin = (D + 1)/2;
+
+%% =========================
+% TREINAMENTO 1
+%% =========================
+
+rng(1)
+
+net1 = patternnet(4);
+
+net1.trainFcn = 'trainlm';
+net1.trainParam.goal = 1e-5;
+net1.trainParam.epochs = 1000;
+
+[net1,tr1] = train(net1,X,Dbin);
+
+W1_1 = net1.IW{1,1};
+B1_1 = net1.b{1};
+
+W2_1 = net1.LW{2,1};
+B2_1 = net1.b{2};
+
+epocas1 = tr1.num_epochs;
+
+%% =========================
+% TREINAMENTO 2
+%% =========================
+
+rng(10)
+
+net2 = patternnet(4);
+
+net2.trainFcn = 'trainlm';
+net2.trainParam.goal = 1e-5;
+net2.trainParam.epochs = 1000;
+
+[net2,tr2] = train(net2,X,Dbin);
+
+W1_2 = net2.IW{1,1};
+B1_2 = net2.b{1};
+
+W2_2 = net2.LW{2,1};
+B2_2 = net2.b{2};
+
+epocas2 = tr2.num_epochs;
+
+%% =========================
+% LEITURA DOS DADOS DE TESTE
+%% =========================
+
+Tteste = readtable('dadosTrafos.xlsx','Sheet','tab_teste');
+
+txtTeste = string(Tteste.x1);
+
+Nteste = length(txtTeste);
+dadosTeste = zeros(Nteste,3);
+
+for k = 1:Nteste
+    linha = strrep(txtTeste(k),',','.');
+    valores = sscanf(linha,'%f');
+    dadosTeste(k,:) = valores';
+end
+
+Xteste = dadosTeste';
+
+%% =========================
+% CLASSIFICACAO
+%% =========================
+
+y1 = net1(Xteste);
+y2 = net2(Xteste);
+
+classe1 = 2*(y1 >= 0.5)-1;
+classe2 = 2*(y2 >= 0.5)-1;
+
+Resultado = table((1:10)',classe1',classe2',...
+    'VariableNames',{'Amostra','y_T1','y_T2'});
+
+%% =========================
+% RESULTADOS
+%% =========================
+
+disp('===================================')
+disp('TREINAMENTO 1')
+disp('===================================')
+
+disp('Pesos camada oculta')
+disp(W1_1)
+
+disp('Bias camada oculta')
+disp(B1_1)
+
+disp('Pesos camada de saida')
+disp(W2_1)
+
+disp('Bias camada de saida')
+disp(B2_1)
+
+fprintf('Numero de epocas: %d\n',epocas1)
+
+disp(' ')
+
+disp('===================================')
+disp('TREINAMENTO 2')
+disp('===================================')
+
+disp('Pesos camada oculta')
+disp(W1_2)
+
+disp('Bias camada oculta')
+disp(B1_2)
+
+disp('Pesos camada de saida')
+disp(W2_2)
+
+disp('Bias camada de saida')
+disp(B2_2)
+
+fprintf('Numero de epocas: %d\n',epocas2)
+
+disp(' ')
+
+disp('===================================')
+disp('CLASSIFICACAO DAS AMOSTRAS')
+disp('===================================')
+
+disp(Resultado)
