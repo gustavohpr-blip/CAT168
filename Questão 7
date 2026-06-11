@@ -1,0 +1,294 @@
+%% ============================================================
+% PREVISÃO DE CARGA ELÉTRICA UTILIZANDO PMC
+% Entradas:
+%   PA(k-1)
+%   PA(k-2)
+%   PA(k-24)
+%
+% Saída:
+%   PA(k)
+%
+% Previsão recursiva de 1 a 24 passos à frente
+%
+% Métricas:
+%   RMSE
+%   MAPE
+%
+% ============================================================
+
+clear;
+clc;
+close all;
+
+%% ============================================================
+% 1. LEITURA DOS DADOS
+% ============================================================
+
+dados = readtable('carga_eletrica.xlsx');
+
+PA = dados{:,1};
+
+PA = PA(:);
+
+fprintf('Número de amostras = %d\n',length(PA));
+
+%% ============================================================
+% 2. CONSTRUÇÃO DOS PADRÕES
+% ============================================================
+
+X = [];
+Y = [];
+
+for k = 25:length(PA)
+
+    X = [X;
+         PA(k-24) ...
+         PA(k-2) ...
+         PA(k-1)];
+
+    Y = [Y;
+         PA(k)];
+
+end
+
+%% ============================================================
+% 3. NORMALIZAÇÃO
+% ============================================================
+
+[Xn,psX] = mapminmax(X',-1,1);
+[Yn,psY] = mapminmax(Y',-1,1);
+
+%% ============================================================
+% 4. TREINO / TESTE
+% ============================================================
+
+N = size(Xn,2);
+
+Ntreino = round(0.7*N);
+
+Xtreino = Xn(:,1:Ntreino);
+Ytreino = Yn(:,1:Ntreino);
+
+Xteste = Xn(:,Ntreino+1:end);
+Yteste = Yn(:,Ntreino+1:end);
+
+%% ============================================================
+% 5. CRIAÇÃO DA REDE
+% ============================================================
+
+net = fitnet(10,'trainlm');
+
+net.divideFcn = 'dividetrain';
+
+net.trainParam.epochs = 1000;
+net.trainParam.goal = 1e-6;
+net.trainParam.min_grad = 1e-10;
+
+%% ============================================================
+% 6. TREINAMENTO
+% ============================================================
+
+fprintf('\nTreinando rede...\n');
+
+net = train(net,Xtreino,Ytreino);
+
+%% ============================================================
+% 7. TESTE-CEGO
+% ============================================================
+
+Ypred_n = net(Xteste);
+
+Ypred = mapminmax('reverse',Ypred_n,psY);
+
+Yreal = mapminmax('reverse',Yteste,psY);
+
+%% ============================================================
+% 8. MÉTRICAS
+% ============================================================
+
+RMSE = sqrt(mean((Yreal - Ypred).^2));
+
+MAPE = mean(abs((Yreal - Ypred)./Yreal))*100;
+
+fprintf('\n============================\n');
+fprintf('RESULTADOS TESTE-CEGO\n');
+fprintf('============================\n');
+
+fprintf('RMSE = %.4f\n',RMSE);
+fprintf('MAPE = %.4f %%\n',MAPE);
+
+%% ============================================================
+% 9. GRÁFICO REAL x PREVISTO
+% ============================================================
+
+figure;
+
+plot(Yreal,'b','LineWidth',1.5);
+hold on;
+
+plot(Ypred,'r--','LineWidth',1.5);
+
+grid on;
+
+xlabel('Amostra');
+ylabel('Potência Ativa');
+
+legend('Real','Previsto');
+
+title('Teste-cego');
+
+%% ============================================================
+% 10. PREVISÃO RECURSIVA DE 24 PASSOS
+% ============================================================
+
+H = 24;
+
+serie = PA;
+
+previsoes = zeros(H,1);
+
+for h = 1:H
+
+    k = length(serie);
+
+    entrada = [
+        serie(k-23)
+        serie(k-1)
+        serie(k)
+        ];
+
+    entrada_n = mapminmax('apply',entrada,psX);
+
+    y_n = net(entrada_n);
+
+    y = mapminmax('reverse',y_n,psY);
+
+    previsoes(h) = y;
+
+    serie = [serie; y];
+
+end
+
+%% ============================================================
+% 11. EXIBIR PREVISÕES
+% ============================================================
+
+fprintf('\n============================\n');
+fprintf('PREVISÕES 24 HORAS À FRENTE\n');
+fprintf('============================\n');
+
+for i = 1:H
+
+    fprintf('Hora +%2d = %.3f\n',i,previsoes(i));
+
+end
+
+%% ============================================================
+% 12. GRÁFICO DAS PREVISÕES
+% ============================================================
+
+figure;
+
+plot(1:H,previsoes,'o-','LineWidth',1.5);
+
+grid on;
+
+xlabel('Horizonte de previsão (h)');
+ylabel('Potência Ativa');
+
+title('Previsão Recursiva de 24 Horas');
+
+%% ============================================================
+% 13. TESTE DE HORIZONTES 1 A 24 PASSOS
+% ============================================================
+
+RMSE_h = zeros(24,1);
+MAPE_h = zeros(24,1);
+
+fprintf('\nCalculando desempenho por horizonte...\n');
+
+for H = 1:24
+
+    erros = [];
+
+    porcentagens = [];
+
+    inicio = Ntreino + 25;
+
+    fim = length(PA) - H;
+
+    for t = inicio:fim
+
+        serie_aux = PA(1:t);
+
+        for passo = 1:H
+
+            kk = length(serie_aux);
+
+            entrada = [
+                serie_aux(kk-23)
+                serie_aux(kk-1)
+                serie_aux(kk)
+                ];
+
+            entrada_n = mapminmax('apply',entrada,psX);
+
+            yp_n = net(entrada_n);
+
+            yp = mapminmax('reverse',yp_n,psY);
+
+            serie_aux = [serie_aux; yp];
+
+        end
+
+        valor_previsto = serie_aux(end);
+
+        valor_real = PA(t+H);
+
+        erros = [erros ; valor_real - valor_previsto];
+
+        porcentagens = [porcentagens ;
+            abs((valor_real-valor_previsto)/valor_real)];
+
+    end
+
+    RMSE_h(H) = sqrt(mean(erros.^2));
+
+    MAPE_h(H) = mean(porcentagens)*100;
+
+end
+
+%% ============================================================
+% 14. TABELA FINAL
+% ============================================================
+
+Resultados = table((1:24)',RMSE_h,MAPE_h,...
+    'VariableNames',{'Horizonte','RMSE','MAPE'});
+
+disp(Resultados);
+
+%% ============================================================
+% 15. GRÁFICOS DE DESEMPENHO
+% ============================================================
+
+figure;
+
+plot(1:24,RMSE_h,'o-','LineWidth',1.5);
+
+grid on;
+
+xlabel('Horizonte (horas)');
+ylabel('RMSE');
+
+title('RMSE x Horizonte');
+
+figure;
+
+plot(1:24,MAPE_h,'o-','LineWidth',1.5);
+
+grid on;
+
+xlabel('Horizonte (horas)');
+ylabel('MAPE (%)');
+
+title('MAPE x Horizonte');
